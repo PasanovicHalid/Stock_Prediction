@@ -38,9 +38,9 @@ def handle_null_values_in_date_column(df: pd.DataFrame):
     for i in range(len(df)):
         if pd.isnull(df.loc[i, "Date"]):
             if i == 0:
-                df.loc[i, "Date"] = df.loc[i+1, "Date"] - pd.DateOffset(1)
+                df.loc[i, "Date"] = df.loc[i+1, "Date"] - pd.DateOffset(1) # type: ignore
             else:
-                df.loc[i, "Date"] = df.loc[i-1, "Date"] + pd.DateOffset(1)
+                df.loc[i, "Date"] = df.loc[i-1, "Date"] + pd.DateOffset(1) # type: ignore
 
     return df
 
@@ -54,11 +54,11 @@ def handle_missing_days_in_date_column(df: pd.DataFrame):
         if i == 0:
             continue
         else:      
-            time_delta : pd.Timedelta = df.loc[i, "Date"] - df.loc[i-1, "Date"]      
+            time_delta : pd.Timedelta = df.loc[i, "Date"] - df.loc[i-1, "Date"]       # type: ignore
             if time_delta > pd.Timedelta(days=1):
                 for j in range(1, time_delta.days):
                     new_row = df.loc[i - 1].copy()
-                    new_row["Date"] = df.loc[i - 1, "Date"] + pd.DateOffset(j)
+                    new_row["Date"] = df.loc[i - 1, "Date"] + pd.DateOffset(j) # type: ignore
                     new_row["Volume"] = 0
                     new_rows.append(new_row)
                 
@@ -100,7 +100,7 @@ def validate_if_date_column_has_increasing_values(df: pd.DataFrame):
     Validates if the date column has increasing values.
     """
     for i in range(len(df) - 1):
-        time_delta : pd.Timedelta = df.loc[i, "Date"] - df.loc[i+1, "Date"]      
+        time_delta : pd.Timedelta = df.loc[i, "Date"] - df.loc[i+1, "Date"]       # type: ignore
         if time_delta != pd.Timedelta(days=-1):
             return False
     return True
