@@ -1,4 +1,3 @@
-from ast import Tuple
 import pandas as pd;
 import os;
 import keras;
@@ -142,7 +141,7 @@ def get_predictions(model : keras.Model, x_values : np.ndarray, window_size : in
 
     return np.array(predictions)
 
-def plot_results(test, preds, df, image_path=None, title_suffix=None, xlabel='AAPL stock Price'):
+def plot_results(test, preds, df, title_suffix=None, xlabel='AAPL stock Price'):
   """
   Plots training data in blue, actual values in red, and predictions in green,
   over time.
@@ -163,9 +162,6 @@ def plot_results(test, preds, df, image_path=None, title_suffix=None, xlabel='AA
   ax.set_xlabel('Date')
   ax.set_ylabel(xlabel)
   ax.legend()
-  if image_path != None:
-    imagedir = '/content/drive/MyDrive/Colab Notebooks/images'
-    plt.savefig(f'{imagedir}/{image_path}.png')
   plt.show()
 
 def main():
@@ -173,12 +169,14 @@ def main():
     Main function.
     """
 
-    loaded_data = import_data_from_csv("data/unprocessed/AAPL.csv")
+    loaded_data = import_data_from_csv("data/processed/AAPL.csv")
     extracted_data = extract_features_required_for_training(loaded_data, ["Adj Close"])
     
-    training_data, test_data = split_data_into_training_and_test_sets(extracted_data, 0, int(extracted_data.shape[0] * 0.5), 0.8)
+    training_data, test_data = split_data_into_training_and_test_sets(extracted_data, 0, int(extracted_data.shape[0] * 1), 0.8)
     reshaped_training_data = reshape_data_for_transformer(training_data, 16, 1)
+    print(reshaped_training_data)
     reshaped_test_data = reshape_data_for_transformer(test_data, 16, 1)
+    print(reshaped_test_data)
     training_x_values, training_y_values = final_preparation_of_data(reshaped_training_data, 16)
     validation_x_values, validation_y_values = final_preparation_of_data(reshaped_test_data, 16)
 
@@ -203,7 +201,7 @@ def main():
         callbacks = [keras.callbacks.EarlyStopping(patience=10, 
                                             restore_best_weights=True)]
 
-        t_hist = transformer.fit(training_x_values, training_y_values, batch_size=40,
+        t_hist = transformer.fit(training_x_values, training_y_values, batch_size=20,
                             epochs=50, validation_data=(validation_x_values, validation_y_values), callbacks=callbacks, shuffle=False)
         
         transformer.save("algorithms/transformer/checkpoints/transformer.keras")
@@ -212,9 +210,9 @@ def main():
     
     #visualize_history(t_hist)
 
-    predictions = get_predictions(transformer, validation_x_values, 16)
+    predictions = get_predictions(transformer, reshaped_test_data, 16)
 
-    plot_results(validation_y_values, predictions, test_data, title_suffix='Transformer')
+    plot_results(reshaped_test_data, predictions, test_data, title_suffix='Transformer')
 
 if __name__ == "__main__":
     main()
