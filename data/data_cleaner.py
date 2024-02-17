@@ -114,7 +114,7 @@ def main():
         df = convert_date_column_to_datetime(df)
         df = handle_null_values_in_date_column(df)
         df = rolling_mean_over_columns(df, ["Open", "High", "Low", "Close", "Adj Close"], rolling_mean_window)
-        df = normalize_data(df, ["Open", "High", "Low", "Close", "Adj Close", "Volume"])
+        #df = normalize_data(df, ["Open", "High", "Low", "Close", "Adj Close", "Volume"])
         df = drop_nan_rows(df)
         df = df.reset_index(drop=True) 
         

@@ -5,6 +5,8 @@ import numpy as np;
 import matplotlib.pyplot as plt;
 import tensorflow as tf
 
+days_for_prediction = 5
+
 def import_data_from_csv(path: str):
     """
     Imports data from a csv file and returns a pandas dataframe.
@@ -118,7 +120,7 @@ def build_transfromer(head_size,
   """
   Creates final model by building many transformer blocks.
   """
-  n_timesteps, n_features, n_outputs = 7, 1, 7 
+  n_timesteps, n_features, n_outputs = days_for_prediction, 1, days_for_prediction
   inputs = keras.Input(shape=(n_timesteps, n_features))
 
   # Add positional encoding layer
@@ -151,7 +153,7 @@ def forecast(history : list, model : keras.Model, window_size : int):
     yhat = model.predict(input_x, verbose="0")
     # we only want the vector forecast
     yhat = yhat[0]
-    return yhat
+    return yhat.reshape((window_size, 1))
 
 def get_predictions(model : keras.Model, x_values : np.ndarray, window_size : int):
     history = [x for x in x_values]
@@ -187,27 +189,97 @@ def plot_results(test, preds, df, title_suffix=None, xlabel='AAPL stock Price'):
   ax.legend()
   plt.show()
 
+def plot_results_all_predictions_combined(test, preds, df, title_suffix=None, xlabel='AAPL'):
+  """
+  Plots training data in blue, actual values in red, and predictions in green,
+  over time.
+  """
+  fig, ax = plt.subplots(figsize=(20,6))
+  # x = df.Close[-498:].index
+  plot_test = [test[1:] for test in test]
+  plot_preds = [pred[1:] for pred in preds]
+
+  #x = df[-(plot_test.shape[0]*plot_test.shape[1]):].index
+
+  plot_test = np.concatenate(plot_test, axis=0)
+
+  plot_test = plot_test.reshape((plot_test.shape[0]*plot_test.shape[1], 1))
+  ax.plot(plot_test, label='actual')
+
+  start_position_x = 0
+  for i in range(len(plot_preds)):
+    plot_pred = plot_preds[i].reshape((plot_preds[i].shape[0]*plot_preds[i].shape[1], 1))
+
+    plot_x = np.arange(start_position_x, start_position_x + len(plot_pred))
+
+    start_position_x += len(plot_pred)
+
+    ax.plot(plot_x, plot_pred, label='preds-'+ str(i))
+
+  if title_suffix==None:
+    ax.set_title('Predictions vs. Actual')
+  else:
+    ax.set_title(f'Predictions vs. Actual, {title_suffix}')
+  ax.set_xlabel('Date')
+  ax.set_ylabel(xlabel + " stock Price")
+  ax.legend()
+  plt.show()
+
 def main():
     """
     Main function.
     """
 
-    loaded_data = import_data_from_csv("data/processed/AAPL.csv")
+    files = os.listdir("data/processed")
+
+    for file in files:
+        transformer_prediction("data/processed/" + file)
+
+
+def transformer_prediction(file: str):
+    file_name = file.split("/")[-1]
+
+    file_name_without_extension = file_name.split(".")[0]
+
+
+    loaded_data = import_data_from_csv(file)
     extracted_data = extract_features_required_for_training(loaded_data, ["Adj Close"])
+
+    number_of_intervals = 5
+    percentage_of_test_interval_data = 0.8
+
+    interval_size = int(extracted_data.shape[0] / number_of_intervals)
+
+    training_data, test_data = [], []
+    training_values, test_values = [], []
     
-    training_data, test_data = split_data_into_training_and_test_sets(extracted_data, 0, int(extracted_data.shape[0] * 1), 0.8)
-    reshaped_training_data = reshape_data_for_transformer(training_data, 7, 1)
-    print(reshaped_training_data)
-    reshaped_test_data = reshape_data_for_transformer(test_data, 7, 1)
-    print(reshaped_test_data)
-    training_x_values, training_y_values = final_preparation_of_data(reshaped_training_data, 7)
-    validation_x_values, validation_y_values = final_preparation_of_data(reshaped_test_data, 7)
+    for i in range(number_of_intervals):
+        start = i * interval_size
+        end = start + interval_size
 
+        if(i == number_of_intervals - 1):
+            end = extracted_data.shape[0]
 
-    transformer = build_transfromer(head_size=128, num_heads=4, ff_dim=2, 
-                                    num_trans_blocks=4, mlp_units=[256], 
-                                    mlp_dropout=0.10, dropout=0.10, 
-                                    attention_axes=1)
+        training_data_interval, test_data_interval = split_data_into_training_and_test_sets(extracted_data, start, end, percentage_of_test_interval_data)
+        reshaped_training_data_interval = reshape_data_for_transformer(training_data_interval, days_for_prediction, 1)
+        reshaped_test_data_interval = reshape_data_for_transformer(test_data_interval, days_for_prediction, 1)
+
+        training_data.append(reshaped_training_data_interval)
+        test_data.append(reshaped_test_data_interval)
+
+        training_x_values_interval, training_y_values_interval = final_preparation_of_data(reshaped_training_data_interval, days_for_prediction)
+        test_x_values_interval, test_y_values_interval = final_preparation_of_data(reshaped_test_data_interval, days_for_prediction)
+
+        if(i != 0):
+            training_x_values_interval = np.concatenate((test_values[i - 1][0], training_x_values_interval))
+            training_y_values_interval = np.concatenate((test_values[i - 1][1], training_y_values_interval))
+
+        training_values.append((training_x_values_interval, training_y_values_interval))
+        test_values.append((test_x_values_interval, test_y_values_interval))
+
+    transformer = build_transfromer(head_size=128, num_heads=16, ff_dim= 2, 
+                                    num_trans_blocks=12, mlp_units=[1024, 128], 
+                                    mlp_dropout=0.2, dropout=0.1)
 
     transformer.compile(
         loss="mse",
@@ -217,24 +289,42 @@ def main():
 
     transformer.summary()
 
-    if(os.path.exists("algorithms/transformer/checkpoints/transformer.keras")):
-        transformer = keras.models.load_model("algorithms/transformer/checkpoints/transformer.keras")
-    else:
-        callbacks = [keras.callbacks.EarlyStopping(patience=10, 
-                                            restore_best_weights=True)]
+    prediction_inputs_list = []
+    predictions_list = []
 
-        t_hist = transformer.fit(training_x_values, training_y_values, batch_size=20,
-                            epochs=50, validation_data=(validation_x_values, validation_y_values), callbacks=callbacks, shuffle=False)
-        
-        transformer.save("algorithms/transformer/checkpoints/transformer.keras")
-    
-                            
-    
-    #visualize_history(t_hist)
+    for i in range(number_of_intervals):
+        training_x_values, training_y_values = training_values[i] 
+        validation_x_values, validation_y_values = test_values[i] 
 
-    predictions = get_predictions(transformer, reshaped_test_data, 7)
+        file_path = "algorithms/transformer/checkpoints/" + file_name_without_extension + "/transformer-" + str(i + 1) + ".keras"
 
-    plot_results(reshaped_test_data, predictions, test_data, title_suffix='Transformer')
+        if(os.path.exists(file_path)):
+            transformer = keras.models.load_model(file_path)
+        else:
+            file_path_previos = "algorithms/transformer/checkpoints/transformer-" + str(i) + ".keras"
+
+            if(os.path.exists(file_path_previos)):
+                transformer = keras.models.load_model(file_path_previos)
+
+            callbacks = [keras.callbacks.EarlyStopping(monitor='loss', patience=10, 
+                                                restore_best_weights=True)]
+
+            t_hist = transformer.fit(training_x_values, training_y_values, batch_size=15,
+                                epochs=20, callbacks=callbacks, validation_data=(validation_x_values, validation_y_values))
+            
+            transformer.save(file_path)
+
+        prediction_inputs = np.concatenate((training_data[i], test_data[i]))
+
+        prediction_inputs_list.append(prediction_inputs)
+
+        predictions = get_predictions(transformer, prediction_inputs, days_for_prediction)
+
+        predictions_list.append(predictions)
+
+    plot_results_all_predictions_combined(prediction_inputs_list, predictions_list, extracted_data, title_suffix='Transformer', xlabel=file_name_without_extension)   
+
+
 
 if __name__ == "__main__":
     main()
