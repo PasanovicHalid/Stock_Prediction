@@ -1,4 +1,4 @@
 env/
 algorithms/transformer/checkpoints/**/*
-algorithms/transformer/checkpoints/**/*
+algorithms/cnn-lstm/checkpoints/**/*
 algorithms/lstm/checkpoints/**/*
