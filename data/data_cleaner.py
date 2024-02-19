@@ -113,15 +113,14 @@ def main():
         df = import_data_from_csv("{}unprocessed/".format(path_to_data) + file)
         df = convert_date_column_to_datetime(df)
         df = handle_null_values_in_date_column(df)
-        df = handle_missing_days_in_date_column(df)
         df = rolling_mean_over_columns(df, ["Open", "High", "Low", "Close", "Adj Close"], rolling_mean_window)
-        df = normalize_data(df, ["Open", "High", "Low", "Close", "Adj Close", "Volume"])
+        #df = normalize_data(df, ["Open", "High", "Low", "Close", "Adj Close", "Volume"])
         df = drop_nan_rows(df)
-        df = df.reset_index(drop=True)
+        df = df.reset_index(drop=True) 
         
-        if not validate_if_date_column_has_increasing_values(df):
-            print("Date column in " + file + " does not have valid date values.")
-            continue
+        # if not validate_if_date_column_has_increasing_values(df):
+        #     print("Date column in " + file + " does not have valid date values.")
+        #     continue
 
         export_data_to_csv(df, "{}processed/".format(path_to_data) + file)
 
