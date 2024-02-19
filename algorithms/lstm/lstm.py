@@ -1,3 +1,11 @@
+"""
+1) Time stamp should be 5 - done
+2) Implment walk forward in 5 steps - done
+3) Add data normalization - done
+4) Move everthing to notebook after finishing
+"""
+import os
+from re import X
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -5,7 +13,7 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM
 from keras.models import load_model
 from keras.layers import Dropout
-
+import keras;
 import math
 from sklearn.preprocessing import MinMaxScaler
 
@@ -15,54 +23,83 @@ def import_data_from_csv(path: str):
     """
     return pd.read_csv(path)
 
+
 def extract_features_required_for_training(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
     """
     Extracts features required for training.
     """
     return df[features]
 
-def split_data_into_training_and_test_sets(df: pd.DataFrame, train_ratio: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+def split_data_into_training_and_test_sets(df: pd.DataFrame, window_start: int, window_end: int, test_size: float, columns: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Splits the data into training and test sets based on the given ratio.
+    Splits the data into training and test sets based on the given ratio and normalizes them.
     """
-    train_size = int(len(df) * train_ratio)
-    train_data = df.iloc[0:train_size]
-    test_data = df.iloc[train_size:len(df)]
-    return train_data, test_data
+    data_count = window_end - window_start
+    test_data_count = int(data_count * test_size)
+
+    end_of_training_data = window_start + test_data_count
+
+    df = normalize_data(df, columns, window_start, end_of_training_data)
+    df = normalize_data(df, columns, end_of_training_data, window_end)
+
+    return df.iloc[window_start : end_of_training_data], df.iloc[end_of_training_data : window_end]
+
+
+def normalize_data(df: pd.DataFrame, columns: list[str], start: int, end: int):
+    """
+    Normalizes the data in the given segment.
+    """
+    for column in columns:
+        max_value = df.iloc[start:end][column].max()
+        df.loc[start:end, column] = df.loc[start:end, column] / max_value
+
+    return df
+
 
 def create_dataset(dataset: pd.DataFrame, time_step = 1) -> tuple[np.ndarray, np.ndarray]:
     """
     Creates a dataset.
     """
     dataX,dataY = [],[]
+
     for i in range(len(dataset)-time_step-1):
-        a = dataset.iloc[i:(i+time_step), 0]
-        dataX.append(a)
+        dataX.append(dataset.iloc[i:(i+time_step), 0])
         dataY.append(dataset.iloc[i + time_step, 0])
+
     return np.array(dataX),np.array(dataY)
 
-def train_and_save_model(X_train, Y_train, batch_size, epochs):
+
+def build_model(input_shape):
+    """
+    Builds the LSTM model.
+    """
     model = Sequential()
-    model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
-    model.add(Dropout(0.2))
+    model.add(LSTM(75, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(0.1))
 
-    model.add(LSTM(50, return_sequences=True))
-    model.add(Dropout(0.2))
+    model.add(LSTM(75, return_sequences=True))
+    model.add(Dropout(0.1))
 
-    model.add(LSTM(50, return_sequences=True))
-    model.add(Dropout(0.2))
+    model.add(LSTM(75, return_sequences=True))
+    model.add(Dropout(0.1))
 
-    model.add(LSTM(50))
-    model.add(Dropout(0.2))
+    model.add(LSTM(75))
+    model.add(Dropout(0.1))
 
-    model.add(Dense(1))
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.add(Dense(512, activation="relu"))
+    model.add(Dropout(0.1))
+
+    model.add(Dense(512, activation="relu")) 
+    model.add(Dropout(0.1))
+
+    model.add(Dense(1, activation="relu"))
+    
+    model.compile(loss="mse", optimizer=keras.optimizers.Adam(learning_rate=1e-4), metrics=["mae", 'mape'])
     model.summary()
 
-    model.fit(X_train, Y_train, batch_size = batch_size, epochs = epochs)
-    model.save('lstm_stock_predict_v2.keras')
-
     return model
+
 
 def plot_data(loaded_data, title: str, xlabel: str, ylabel: str, datacolumn: str):
     """
@@ -74,6 +111,7 @@ def plot_data(loaded_data, title: str, xlabel: str, ylabel: str, datacolumn: str
     plt.xlabel(xlabel, fontsize=18)
     plt.ylabel(ylabel, fontsize=18)
     plt.show()
+
 
 def plot_data_list(loaded_data_list, title: str, xlabel: str, ylabel: str, datacolumns: list):
     """
@@ -88,46 +126,94 @@ def plot_data_list(loaded_data_list, title: str, xlabel: str, ylabel: str, datac
     plt.legend()
     plt.show()
 
-def main():
-    #scaler = MinMaxScaler(feature_range=(0,1))
-     
-    loaded_data = import_data_from_csv("data\\processed\\AAPL.csv")
+
+def lstm_prediction(file: str):
+    file_name = file.split("/")[-1]
+    file_name_without_extension = file_name.split(".")[0]
+
+    loaded_data = import_data_from_csv(file)
     extracted_data = extract_features_required_for_training(loaded_data, ["Adj Close"])
-    # Plot the data
-    plot_data(extracted_data, 'Adj Close Price History', 'Date', 'Adj Close Price USD ($)', 'Adj Close')
 
-    #scaled_data = scaler.fit_transform(extracted_data)
-    #scaled_data_df = pd.DataFrame(scaled_data, columns=extracted_data.columns)
+    time_step = 5
+    number_of_intervals = 5
+    percentage_of_test_interval_data = 0.8
 
-    training_data, test_data = split_data_into_training_and_test_sets(extracted_data, 0.70)
+    interval_size = int(extracted_data.shape[0] / number_of_intervals)
 
-    plot_data_list([training_data, test_data], 'Training and Test Data', 'Date', 'Adj Close Price USD ($)', ['Adj Close', 'Adj Close'])
+    X_training_data, Y_training_data = [], []
+    X_test_data, Y_test_data = [], []
 
-    time_step = 14
-    X_train, Y_train =  create_dataset(training_data, time_step)
-    X_test, Y_test =  create_dataset(test_data, time_step)
+    for i in range(number_of_intervals):
+        start = i * interval_size
+        end = start + interval_size
 
-    X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
-    
-    try:
-        # Load the model
-        model = load_model('lstm_stock_predict_v2.keras')
-    except Exception as e:
-        print(f"Failed to load model: {e}")
-        print("Training model...")
-        model = train_and_save_model(X_train, Y_train, batch_size=20, epochs=25)
+        if(i == number_of_intervals - 1):
+            end = extracted_data.shape[0]
 
-    if model is not None:
-        X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1] ,1))
-        predictions = model.predict(X_test)
-        rmse = np.sqrt(np.mean(((predictions - Y_test) ** 2)))
-        print(rmse)
+        training_data_interval, test_data_interval = split_data_into_training_and_test_sets(extracted_data, start, end, percentage_of_test_interval_data, ["Adj Close"])
+        
+        X_train, Y_train =  create_dataset(training_data_interval, time_step)
+        X_test, Y_test =  create_dataset(test_data_interval, time_step)
 
-        #predictions = scaler.inverse_transform(predictions)
-        #Y_test_inverse = scaler.inverse_transform(Y_test.reshape(-1, 1))
-        plot_data_list([predictions, Y_test], 'Predictions vs Actual', 'Date', 'Adj Close Price USD ($)', ['Predictions', 'Actual'])
-    else:
-        print("Model is None, cannot make predictions")
+        if(i != 0):
+            X_train = np.concatenate((X_test_data[i - 1], X_train))
+            Y_train = np.concatenate((Y_test_data[i - 1], Y_train))
+
+        X_training_data.append(X_train)
+        Y_training_data.append(Y_train)
+
+        X_test_data.append(X_test)
+        Y_test_data.append(Y_test)
+
+    X_train_shape = (X_training_data[0].shape[1], 1)
+    lstm_model = build_model(X_train_shape)
+
+    predictions_list = []
+    actuals_list = []
+
+    for i in range(number_of_intervals):
+        X_training_data_interval = X_training_data[i]
+        Y_training_data_interval = Y_training_data[i]
+        X_test_data_interval = X_test_data[i]
+        Y_test_data_interval = Y_test_data[i]
+        
+        file_path = "algorithms/lstm/checkpoints/" + file_name_without_extension + "/lstm-" + str(i + 1) + ".keras"
+
+        if(os.path.exists(file_path)):
+            lstm_model = load_model(file_path)
+        else:
+            file_path_previos = "algorithms/lstm/checkpoints/" + file_name_without_extension + "/lstm-" + str(i) + ".keras"
+
+            if(os.path.exists(file_path_previos)):
+                lstm_model = load_model(file_path_previos)
+
+            X_training_data_interval = np.reshape(X_training_data_interval, (X_training_data_interval.shape[0], X_training_data_interval.shape[1], 1))
+
+            t_hist = lstm_model.fit(X_training_data_interval, Y_training_data_interval, batch_size = 15, epochs = 50)
+
+            lstm_model.save(file_path)
+        
+        X_test_data_interval = np.reshape(X_test_data_interval, (X_test_data_interval.shape[0], X_test_data_interval.shape[1] ,1))
+        predictions = lstm_model.predict(X_test_data_interval)
+        rmse = np.sqrt(np.mean(((predictions - Y_test_data_interval) ** 2)))
+        print("RSME: " + str(rmse))
+
+        predictions_list = np.concatenate((predictions_list, predictions.flatten()))  # flatten predictions before concatenating
+        actuals_list = np.concatenate((actuals_list, Y_test_data_interval.flatten()))  # flatten Y_test_data_interval before concatenating
+
+
+    #TODO: Convert normalized data back to original data before plotting
+    plot_data_list([predictions_list, actuals_list], 'Predictions vs Actual', 'Date', 'Adj Close Price USD ($)', ['Predictions', 'Actual'])
+
+
+def main():
+    """
+    Main function.
+    """
+    files = os.listdir("data/processed")
+
+    for file in files:
+        lstm_prediction("data/processed/" + file)
 
 
 if __name__ == "__main__":
