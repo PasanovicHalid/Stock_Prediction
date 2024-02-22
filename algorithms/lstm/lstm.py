@@ -15,7 +15,8 @@ from keras.models import load_model
 from keras.layers import Dropout
 import keras;
 import math
-from sklearn.preprocessing import MinMaxScaler
+from typing import Tuple, Dict
+
 
 def import_data_from_csv(path: str):
     """
@@ -31,30 +32,41 @@ def extract_features_required_for_training(df: pd.DataFrame, features: list[str]
     return df[features]
 
 
-def split_data_into_training_and_test_sets(df: pd.DataFrame, window_start: int, window_end: int, test_size: float, columns: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def split_data_into_training_and_test_sets(df: pd.DataFrame, window_start: int, window_end: int, test_size: float, columns: list[str]) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
     """
-    Splits the data into training and test sets based on the given ratio and normalizes them.
+    Normalizes the entire data set, then splits it into training and test sets based on the given ratio.
     """
     data_count = window_end - window_start
     test_data_count = int(data_count * test_size)
 
     end_of_training_data = window_start + test_data_count
 
-    df = normalize_data(df, columns, window_start, end_of_training_data)
-    df = normalize_data(df, columns, end_of_training_data, window_end)
+    df, max_values = normalize_data(df, columns, window_start, window_end)
 
-    return df.iloc[window_start : end_of_training_data], df.iloc[end_of_training_data : window_end]
+    return df.iloc[window_start : end_of_training_data], df.iloc[end_of_training_data : window_end], max_values
 
 
 def normalize_data(df: pd.DataFrame, columns: list[str], start: int, end: int):
     """
     Normalizes the data in the given segment.
     """
+    max_values = {}
     for column in columns:
         max_value = df.iloc[start:end][column].max()
         df.loc[start:end, column] = df.loc[start:end, column] / max_value
+        max_values[column] = max_value
 
-    return df
+    return df, max_values
+
+
+def denormalize_data(data_array: np.ndarray, columns: list[str], max_values: dict):
+    """
+    Denormalizes the data in the given segment.
+    """
+    for column in columns:
+        data_array[:] = data_array[:] * max_values[column]
+
+    return data_array
 
 
 def create_dataset(dataset: pd.DataFrame, time_step = 1) -> tuple[np.ndarray, np.ndarray]:
@@ -142,6 +154,7 @@ def lstm_prediction(file: str):
 
     X_training_data, Y_training_data = [], []
     X_test_data, Y_test_data = [], []
+    max_values_list = []
 
     for i in range(number_of_intervals):
         start = i * interval_size
@@ -150,7 +163,7 @@ def lstm_prediction(file: str):
         if(i == number_of_intervals - 1):
             end = extracted_data.shape[0]
 
-        training_data_interval, test_data_interval = split_data_into_training_and_test_sets(extracted_data, start, end, percentage_of_test_interval_data, ["Adj Close"])
+        training_data_interval, test_data_interval, max_values = split_data_into_training_and_test_sets(extracted_data, start, end, percentage_of_test_interval_data, ["Adj Close"])
         
         X_train, Y_train =  create_dataset(training_data_interval, time_step)
         X_test, Y_test =  create_dataset(test_data_interval, time_step)
@@ -164,6 +177,8 @@ def lstm_prediction(file: str):
 
         X_test_data.append(X_test)
         Y_test_data.append(Y_test)
+
+        max_values_list.append(max_values)
 
     X_train_shape = (X_training_data[0].shape[1], 1)
     lstm_model = build_model(X_train_shape)
@@ -198,22 +213,26 @@ def lstm_prediction(file: str):
         rmse = np.sqrt(np.mean(((predictions - Y_test_data_interval) ** 2)))
         print("RSME: " + str(rmse))
 
-        predictions_list = np.concatenate((predictions_list, predictions.flatten()))  # flatten predictions before concatenating
-        actuals_list = np.concatenate((actuals_list, Y_test_data_interval.flatten()))  # flatten Y_test_data_interval before concatenating
+        denormalized_predictions = denormalize_data(predictions, ["Adj Close"], max_values_list[i])
+        denormalized_actuals = denormalize_data(Y_test_data_interval, ["Adj Close"], max_values_list[i])
+        
+        predictions_list = np.concatenate((predictions_list, denormalized_predictions.flatten()))
+        actuals_list = np.concatenate((actuals_list, denormalized_actuals.flatten()))
 
 
-    #TODO: Convert normalized data back to original data before plotting
     plot_data_list([predictions_list, actuals_list], 'Predictions vs Actual', 'Date', 'Adj Close Price USD ($)', ['Predictions', 'Actual'])
 
 
 def main():
     """
     Main function.
-    """
     files = os.listdir("data/processed")
 
     for file in files:
         lstm_prediction("data/processed/" + file)
+    """
+    lstm_prediction("data/processed/AAPL.csv")
+    
 
 
 if __name__ == "__main__":
