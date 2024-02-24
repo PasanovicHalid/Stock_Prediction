@@ -1,9 +1,3 @@
-"""
-1) Time stamp should be 5 - done
-2) Implment walk forward in 5 steps - done
-3) Add data normalization - done
-4) Move everthing to notebook after finishing
-"""
 import os
 from re import X
 import pandas as pd

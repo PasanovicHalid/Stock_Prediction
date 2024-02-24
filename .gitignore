@@ -2,3 +2,4 @@ env/
 algorithms/transformer/checkpoints/**/*
 algorithms/cnn-lstm/checkpoints/**/*
 algorithms/lstm/checkpoints/**/*
+algorithms/lstm/tuning_results/**/*
